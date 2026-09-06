@@ -1,0 +1,9 @@
+# Audio/video sinh ra — dựng lại được từ script, không đẩy lên git
+out/
+# Footage tải từ Pexels — kéo lại bằng scripts/fetch_pexels.py, credit ở footage/SOURCES.json
+footage/*.mp4
+cooking_source/*.mp4
+.DS_Store
+
+# Kịch bản truyện — nội dung của kênh, không public
+content/
