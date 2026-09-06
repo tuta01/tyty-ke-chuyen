@@ -14,7 +14,8 @@ Kịch bản KHÔNG nằm trong repo — dán tay vào một cell riêng:
 
 rồi chạy:
 
-    !python omnivoice_colab.py truyen.txt out.mp3
+    !python omnivoice_colab.py truyen.txt out.mp3                     # fp32, an toàn
+    !python omnivoice_colab.py truyen.txt out.mp3 --dtype bfloat16    # nhanh hơn, nghe thử
 
 Vì sao phải cắt nhỏ: OmniVoice sinh cả đoạn dài một lần thì dễ trôi giọng và phình
 VRAM. Cắt theo đoạn văn (<=MAX_CHARS) rồi ghép lại cho ổn định — giống hệt cách
@@ -52,12 +53,25 @@ def main():
     import torch
     from omnivoice import OmniVoice
 
-    src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+    pos = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--dtype" in sys.argv:
+        v = sys.argv[sys.argv.index("--dtype") + 1]
+        pos = [x for x in pos if x != v]
+    src, dst = Path(pos[0]), Path(pos[1])
     gpu = torch.cuda.is_available()
     if not gpu:
         print("!! Không thấy GPU — Runtime > Change runtime type > GPU. Chạy CPU sẽ rất chậm.")
     dev = "cuda" if gpu else "cpu"
-    dt = torch.float16 if gpu else torch.float32
+
+    # ⚠️ KHÔNG dùng float16. Đã đo: fp16 làm bộ dự đoán độ dài trượt số — 72 ký tự
+    # ra 1.6s thay vì 3.9s, phần sinh bị cắt cụt và phát ra nội dung của giọng mẫu
+    # thay vì chữ cần đọc. fp32 đã kiểm chứng cho ra đúng chữ; bf16 cùng dải mũ với
+    # fp32 nên về lý thuyết an toàn và nhanh hơn, nhưng hãy nghe thử trước khi tin.
+    name = sys.argv[sys.argv.index("--dtype") + 1] if "--dtype" in sys.argv else "float32"
+    dt = {"float32": torch.float32, "bfloat16": torch.bfloat16,
+          "float16": torch.float16}[name]
+    if name == "float16":
+        print("!! float16 đã được đo là hỏng với model này — chỉ dùng để đối chứng.")
 
     ref_txt = Path(REF_TXT).read_text(encoding="utf-8").strip()
     parts = chunks(src.read_text(encoding="utf-8"))
@@ -85,8 +99,11 @@ def main():
         sf.write(f, audio[0], SR)
         files.append(f)
         d = len(audio[0]) / SR
+        # Giọng đọc bình thường ~1.200 ký tự/phút = 20 ký tự/giây. Ra ngắn hơn
+        # nửa mức đó là dấu hiệu sinh bị cắt cụt (xem ghi chú về float16 ở trên).
+        warn = "  ⚠️ NGẮN BẤT THƯỜNG" if d < len(p) / 40 else ""
         print(f"  [{i+1}/{len(parts)}] {len(p):4d} ký tự → {d:5.1f}s "
-              f"trong {time.time()-t1:5.1f}s  {p[:44]}…", flush=True)
+              f"trong {time.time()-t1:5.1f}s  {p[:44]}…{warn}", flush=True)
     gen = time.time() - t0
 
     # Cắt lặng hai đầu từng mảnh rồi chèn khoảng nghỉ cố định; chuẩn hoá -14 LUFS.
