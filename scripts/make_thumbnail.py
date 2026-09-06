@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CHANNEL = "Tỷ Tỷ Kể Chuyện"
 LABEL = "TRUYỆN AUDIO"
-SIZES = {"youtube": (1280, 720), "tiktok": (1080, 1920)}
+SIZES = {"youtube": (1280, 720),   # bìa YouTube
+         "tiktok": (1080, 1920),   # bìa 9:16, dồn nội dung lên trên vì TikTok cắt đáy
+         "profile": (1080, 1440)}  # 3:4 — khung hồ sơ TikTok, dùng trọn khung
 
 
 def opt(flag, default=None):
@@ -44,7 +46,9 @@ def title_html(title):
 
 def build(title, portrait, size, channel):
     W, H = SIZES[size]
-    tall = size == "tiktok"
+    tall = H > W
+    # 9:16 phải chừa đáy cho caption/nút của TikTok; 3:4 thì canh giữa, dùng hết khung.
+    top_heavy = size == "tiktok"
     img = f'<img class="por" src="{data_uri(portrait)}">' if portrait else '<div class="por ph"></div>'
     # Bản dọc xếp ảnh trên chữ dưới; bản ngang xếp ảnh trái chữ phải.
     return f"""<!doctype html><html><head><meta charset="utf-8">
@@ -59,11 +63,13 @@ def build(title, portrait, size, channel):
            border:3px solid #fff; border-radius:{28 if not tall else 34}px;
            box-shadow:0 10px 40px rgba(190,110,140,.28);
            display:flex; flex-direction:{'column' if tall else 'row'};
-           align-items:center; justify-content:{'flex-start' if tall else 'center'};
-           padding:{'70px 34px 0' if tall else '26px 34px'}; gap:{22 if tall else 34}px; }}
+           align-items:center; justify-content:{'flex-start' if top_heavy else 'center'};
+           padding:{'70px 34px 0' if top_heavy else ('44px 34px' if tall else '26px 34px')};
+           gap:{22 if tall else 34}px; }}
   .label {{ position:absolute; top:{14 if not tall else 18}px; left:0; right:0; text-align:center;
             font-size:{15 if not tall else 20}px; letter-spacing:.22em; color:#b98098; font-weight:700; }}
-  .por {{ width:{'34%' if not tall else '58%'}; aspect-ratio:1/1; object-fit:cover; flex:none;
+  .por {{ width:{'34%' if not tall else ('58%' if top_heavy else '52%')};
+          aspect-ratio:1/1; object-fit:cover; flex:none;
           border-radius:{22 if not tall else 28}px; border:5px solid #fff;
           box-shadow:0 8px 26px rgba(180,100,130,.30); }}
   .ph {{ background:repeating-linear-gradient(45deg,#f6dae5,#f6dae5 14px,#f2cede 14px,#f2cede 28px); }}
@@ -76,7 +82,7 @@ def build(title, portrait, size, channel):
          color:#2b2230; letter-spacing:-.01em;
          text-shadow:0 2px 0 #fff, 0 4px 14px rgba(170,90,120,.20); }}
   .hot {{ color:#d61e50; }}
-  .heart {{ position:absolute; {'bottom:14px;' if not tall else 'top:70%;'} left:0; right:0;
+  .heart {{ position:absolute; {'top:70%;' if top_heavy else 'bottom:14px;'} left:0; right:0;
             text-align:center; font-size:{20 if not tall else 30}px; color:#e3628c; }}
 </style></head><body>
   <div class="card">{img}
