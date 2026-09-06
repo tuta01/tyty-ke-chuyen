@@ -1,195 +1,125 @@
 #!/usr/bin/env python3
-"""Dựng ảnh bìa cho video truyện audio — bản ngang YouTube và bản dọc TikTok.
+"""Dựng ảnh bìa video bằng HTML rồi chụp lại bằng Chrome headless.
 
-Bám theo công thức của các kênh cùng thể loại: nền pastel, tên kênh trên đầu,
-tiêu đề chữ to xếp nhiều dòng với vài chữ đổi màu để bắt mắt, chân dung nhân vật
-hai bên, nhãn TRUYỆN AUDIO ở chân.
+Vì sao HTML thay vì vẽ bằng Pillow: kiểu chữ, đổ bóng, bo góc, gradient trong CSS
+đẹp hơn hẳn và sửa nhanh hơn nhiều. Chrome chụp đúng pixel, không phải căn tay.
 
-Đánh dấu chữ cần tô đỏ bằng *sao*:
-    "Xuyên thành nữ phụ ác độc, ta chỉ muốn *nằm thẳng*"
+Đánh dấu chữ cần tô đỏ bằng *sao*, xuống dòng bằng |:
+    "VẢ MẶT NHỎ|BẠN CÙNG PHÒNG|*THÍCH ĂN CHỰC*"
 
 Dùng:
-    python scripts/make_thumbnail.py "Tiêu đề *nhấn mạnh*" out/thumb.jpg
-    python scripts/make_thumbnail.py "..." out/cover.jpg --size tiktok
-    python scripts/make_thumbnail.py "..." out/thumb.jpg --portrait a.png b.png
-
-Không có ảnh chân dung thì hai panel bên vẫn được lấp bằng nền hoa văn, ảnh vẫn
-dùng được — đỡ phải chờ có ảnh mới ra bìa.
+    python scripts/make_thumbnail.py "Dòng 1|Dòng 2|*Dòng nhấn*" out/thumb.jpg \
+        --portrait assets/portraits/nu01.jpg
+    python scripts/make_thumbnail.py "..." out/cover.jpg --size tiktok --portrait ...
+    python scripts/make_thumbnail.py "..." out/t.jpg --keep-html   # giữ .html để chỉnh tay
 """
-import re, sys
+import base64, mimetypes, subprocess, sys, tempfile
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
-CHANNEL = "TỶ TỶ KỂ CHUYỆN"
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHANNEL = "Tỷ Tỷ Kể Chuyện"
 LABEL = "TRUYỆN AUDIO"
-
 SIZES = {"youtube": (1280, 720), "tiktok": (1080, 1920)}
-INK = (38, 30, 46)
-ACCENT = (206, 42, 78)
-CREAM = (255, 247, 244)
-PINK_TOP = (252, 226, 232)
-PINK_BOT = (243, 205, 220)
-
-FONTS = ["/Library/Fonts/Arial Unicode.ttf",
-         "/System/Library/Fonts/Supplemental/Arial Bold.ttf"]
-
-
-def font(size):
-    for f in FONTS:
-        if Path(f).exists():
-            return ImageFont.truetype(f, size)
-    return ImageFont.load_default(size)
 
 
 def opt(flag, default=None):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else default
 
 
-def gradient(w, h):
-    """Nền dọc pastel + vài đốm sáng mờ cho đỡ phẳng."""
-    bg = Image.new("RGB", (w, h))
-    d = ImageDraw.Draw(bg)
-    for y in range(h):
-        t = y / max(h - 1, 1)
-        d.line([(0, y), (w, y)],
-               fill=tuple(round(a + (b - a) * t) for a, b in zip(PINK_TOP, PINK_BOT)))
-    # Vài quầng sáng mờ cho nền đỡ phẳng
-    glow = Image.new("RGB", (w, h), (0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    for cx, cy, r in [(w * 0.20, h * 0.16, w * 0.20), (w * 0.82, h * 0.28, w * 0.15),
-                      (w * 0.34, h * 0.90, w * 0.22)]:
-        gd.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 252, 250))
-    return Image.blend(bg, glow.filter(ImageFilter.GaussianBlur(w // 10)), 0.22)
+def data_uri(p):
+    p = Path(p)
+    mime = mimetypes.guess_type(p.name)[0] or "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(p.read_bytes()).decode()}"
 
 
-def panel(img, box, src):
-    """Dán ảnh chân dung vào ô, cắt phủ kín; không có ảnh thì để nền mờ."""
-    x0, y0, x1, y1 = box
-    pw, ph = x1 - x0, y1 - y0
-    if src and Path(src).exists():
-        p = Image.open(src).convert("RGB")
-        s = max(pw / p.width, ph / p.height)
-        p = p.resize((max(1, round(p.width * s)), max(1, round(p.height * s))), Image.LANCZOS)
-        p = p.crop(((p.width - pw) // 2, 0, (p.width - pw) // 2 + pw, ph))
-    else:
-        p = img.crop(box).filter(ImageFilter.GaussianBlur(18))
-        ImageDraw.Draw(p).rectangle([0, 0, pw, ph], outline=(255, 255, 255, 90), width=4)
-    img.paste(p, (x0, y0))
+def title_html(title):
+    out = []
+    for line in title.split("|"):
+        line = line.strip()
+        hot = line.startswith("*") and line.endswith("*")
+        out.append(f'<div class="tl{" hot" if hot else ""}">{line.strip("*")}</div>')
+    return "\n".join(out)
 
 
-def segments(line):
-    """Tách '*abc*' thành các mảnh (chữ, có_nhấn_mạnh)."""
-    return [(t.strip("*"), t.startswith("*")) for t in re.split(r"(\*[^*]+\*)", line) if t]
-
-
-def wrap(d, title, fnt, max_w):
-    """Xuống dòng theo bề rộng, giữ nguyên dấu * của từ được nhấn."""
-    out, cur = [], ""
-    for word in title.split():
-        test = f"{cur} {word}".strip()
-        if d.textlength(test.replace("*", ""), font=fnt) <= max_w or not cur:
-            cur = test
-        else:
-            out.append(cur)
-            cur = word
-    if cur:
-        out.append(cur)
-    return out
-
-
-def draw_line(d, x, y, line, fnt, stroke):
-    for txt, hot in segments(line):
-        d.text((x, y), txt, font=fnt, fill=ACCENT if hot else INK,
-               stroke_width=stroke, stroke_fill=CREAM)
-        x += d.textlength(txt, font=fnt)
+def build(title, portrait, size, channel):
+    W, H = SIZES[size]
+    tall = size == "tiktok"
+    img = f'<img class="por" src="{data_uri(portrait)}">' if portrait else '<div class="por ph"></div>'
+    # Bản dọc xếp ảnh trên chữ dưới; bản ngang xếp ảnh trái chữ phải.
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@700;800;900&family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+<style>
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{ width:{W}px; height:{H}px; overflow:hidden;
+         font-family:'Be Vietnam Pro',Arial,sans-serif;
+         background:linear-gradient(160deg,#fde8ef 0%,#f7d4e2 55%,#f3c6d8 100%); }}
+  .card {{ position:absolute; inset:{'22px' if not tall else '26px'};
+           background:linear-gradient(150deg,#fff6f9 0%,#fde6ee 60%,#fad7e5 100%);
+           border:3px solid #fff; border-radius:{28 if not tall else 34}px;
+           box-shadow:0 10px 40px rgba(190,110,140,.28);
+           display:flex; flex-direction:{'column' if tall else 'row'};
+           align-items:center; padding:{'34px 30px' if tall else '26px 34px'}; gap:{28 if tall else 34}px; }}
+  .label {{ position:absolute; top:{14 if not tall else 18}px; left:0; right:0; text-align:center;
+            font-size:{15 if not tall else 20}px; letter-spacing:.22em; color:#b98098; font-weight:700; }}
+  .por {{ width:{'34%' if not tall else '76%'}; aspect-ratio:1/1; object-fit:cover; flex:none;
+          border-radius:{22 if not tall else 28}px; border:5px solid #fff;
+          box-shadow:0 8px 26px rgba(180,100,130,.30); }}
+  .ph {{ background:repeating-linear-gradient(45deg,#f6dae5,#f6dae5 14px,#f2cede 14px,#f2cede 28px); }}
+  .right {{ flex:1; display:flex; flex-direction:column; justify-content:center;
+            align-items:center; text-align:center; gap:{6 if not tall else 10}px; width:100%; }}
+  .ch {{ font-family:'Dancing Script',cursive; font-size:{40 if not tall else 62}px;
+         color:#c2416b; line-height:1; margin-bottom:{8 if not tall else 14}px; }}
+  .tl {{ font-weight:900; font-size:{62 if not tall else 88}px; line-height:1.06;
+         color:#2b2230; letter-spacing:-.01em;
+         text-shadow:0 2px 0 #fff, 0 4px 14px rgba(170,90,120,.20); }}
+  .hot {{ color:#d61e50; }}
+  .heart {{ position:absolute; bottom:{14 if not tall else 20}px; left:0; right:0;
+            text-align:center; font-size:{20 if not tall else 28}px; color:#e3628c; }}
+</style></head><body>
+  <div class="card">{img}
+    <div class="right"><div class="ch">{channel}</div>{title_html(title)}</div>
+  </div>
+  <div class="label">{LABEL}</div>
+  <div class="heart">♥ ♥ ♥</div>
+</body></html>"""
 
 
 def main():
     pos = [a for a in sys.argv[1:] if not a.startswith("--")]
-    for flag in ("--size", "--channel"):
+    for flag in ("--size", "--channel", "--portrait"):
         if flag in sys.argv:
             v = sys.argv[sys.argv.index(flag) + 1]
             if v in pos:
                 pos.remove(v)
-    portraits = []
-    if "--portrait" in sys.argv:
-        for a in sys.argv[sys.argv.index("--portrait") + 1:]:
-            if a.startswith("--"):
-                break
-            portraits.append(a)
-            if a in pos:
-                pos.remove(a)
 
-    title = pos[0]
-    dst = Path(pos[1] if len(pos) > 1 else "out/thumb.jpg")
+    title, dst = pos[0], Path(pos[1] if len(pos) > 1 else "out/thumb.jpg")
     size = opt("--size", "youtube")
-    channel = opt("--channel", CHANNEL)
+    portrait = opt("--portrait")
     W, H = SIZES[size]
-    tall = size == "tiktok"
 
-    img = gradient(W, H).convert("RGB")
+    if not Path(CHROME).exists():
+        sys.exit(f"Không thấy Chrome ở {CHROME}")
 
-    # Hai panel chân dung: ngang thì đặt hai bên, dọc thì đặt trên và dưới.
-    if tall:
-        panel(img, (0, 0, W, round(H * 0.30)), portraits[0] if portraits else None)
-        panel(img, (0, round(H * 0.74), W, H), portraits[1] if len(portraits) > 1 else None)
-        band = (round(H * 0.30), round(H * 0.74))
-    else:
-        pw = round(W * 0.24)
-        panel(img, (0, 0, pw, H), portraits[0] if portraits else None)
-        panel(img, (W - pw, 0, W, H), portraits[1] if len(portraits) > 1 else None)
-        band = (0, H)
-
-    d = ImageDraw.Draw(img)
-    inner_l = 0 if tall else round(W * 0.24)
-    inner_r = W if tall else W - round(W * 0.24)
-    cw = inner_r - inner_l
-
-    # ── Băng tên kênh ──
-    f_ch = font(round(W * (0.036 if not tall else 0.048)))
-    chw = d.textlength(channel, font=f_ch)
-    bh = f_ch.size * 1.9
-    by = band[0] + (18 if tall else 16)
-    d.rounded_rectangle([inner_l + (cw - chw) / 2 - 26, by, inner_l + (cw + chw) / 2 + 26, by + bh],
-                        radius=round(bh / 2), fill=(255, 255, 255, 235))
-    d.text((inner_l + (cw - chw) / 2, by + bh * 0.24), channel, font=f_ch, fill=(150, 60, 90))
-
-    # ── Tiêu đề: giảm cỡ chữ tới khi vừa khung ──
-    top = by + bh + (34 if tall else 26)
-    bottom = band[1] - (round(H * 0.10) if tall else round(H * 0.14))
-    maxw = cw - (72 if tall else 56)
-    for fs in range(round(W * (0.115 if not tall else 0.105)), 18, -3):
-        f_t = font(fs)
-        lines = wrap(d, title, f_t, maxw)
-        lh = fs * 1.20
-        if len(lines) * lh <= bottom - top:
-            break
-    y = top + ((bottom - top) - len(lines) * lh) / 2
-    stroke = max(2, round(fs * 0.045))
-    for ln in lines:
-        plain = ln.replace("*", "")
-        draw_line(d, inner_l + (cw - d.textlength(plain, font=f_t)) / 2, y, ln, f_t, stroke)
-        y += lh
-
-    # ── Nhãn chân + huy hiệu FULL ──
-    f_l = font(round(W * (0.026 if not tall else 0.032)))
-    lw = d.textlength(LABEL, font=f_l)
-    ly = band[1] - f_l.size * 2.6
-    d.text((inner_l + (cw - lw) / 2, ly), LABEL, font=f_l, fill=(120, 88, 104))
-
-    f_b = font(round(W * (0.030 if not tall else 0.036)))
-    bw = d.textlength("FULL", font=f_b)
-    bx = inner_l + 28
-    byy = ly - (f_b.size * 1.8 - f_l.size) / 2
-    d.rounded_rectangle([bx, byy, bx + bw + 34, byy + f_b.size * 1.8],
-                        radius=8, fill=ACCENT)
-    d.text((bx + 17, byy + f_b.size * 0.36), "FULL", font=f_b, fill=(255, 255, 255))
+    html = build(title, portrait, size, opt("--channel", CHANNEL))
+    hp = (dst.with_suffix(".html") if "--keep-html" in sys.argv
+          else Path(tempfile.mkdtemp()) / "thumb.html")
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    hp.write_text(html, encoding="utf-8")
 
     dst.parent.mkdir(parents=True, exist_ok=True)
-    img.save(dst, quality=92)
+    png = dst.with_suffix(".png")
+    subprocess.run([CHROME, "--headless", "--disable-gpu", "--hide-scrollbars",
+                    f"--screenshot={png}", f"--window-size={W},{H}",
+                    "--virtual-time-budget=3000",   # chờ webfont tải xong
+                    f"file://{hp}"],
+                   check=True, capture_output=True)
+    if dst.suffix.lower() in (".jpg", ".jpeg"):
+        subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "88",
+                        str(png), "--out", str(dst)], check=True, capture_output=True)
+        png.unlink()
     print(f"→ {dst}  {W}x{H}  ({dst.stat().st_size/1024:.0f} KB)"
-          f"{'  [chưa có ảnh chân dung]' if not portraits else ''}")
+          + (f"  · html: {hp}" if "--keep-html" in sys.argv else ""))
 
 
 if __name__ == "__main__":
