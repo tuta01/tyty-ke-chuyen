@@ -54,28 +54,30 @@ def build(title, portrait, size, channel):
   body {{ width:{W}px; height:{H}px; overflow:hidden;
          font-family:'Be Vietnam Pro',Arial,sans-serif;
          background:linear-gradient(160deg,#fde8ef 0%,#f7d4e2 55%,#f3c6d8 100%); }}
-  .card {{ position:absolute; inset:{'22px' if not tall else '26px'};
+  .card {{ position:absolute; {'inset:22px;' if not tall else 'top:26px; left:26px; right:26px; bottom:26px;'}
            background:linear-gradient(150deg,#fff6f9 0%,#fde6ee 60%,#fad7e5 100%);
            border:3px solid #fff; border-radius:{28 if not tall else 34}px;
            box-shadow:0 10px 40px rgba(190,110,140,.28);
            display:flex; flex-direction:{'column' if tall else 'row'};
-           align-items:center; padding:{'34px 30px' if tall else '26px 34px'}; gap:{28 if tall else 34}px; }}
+           align-items:center; justify-content:{'flex-start' if tall else 'center'};
+           padding:{'70px 34px 0' if tall else '26px 34px'}; gap:{22 if tall else 34}px; }}
   .label {{ position:absolute; top:{14 if not tall else 18}px; left:0; right:0; text-align:center;
             font-size:{15 if not tall else 20}px; letter-spacing:.22em; color:#b98098; font-weight:700; }}
-  .por {{ width:{'34%' if not tall else '76%'}; aspect-ratio:1/1; object-fit:cover; flex:none;
+  .por {{ width:{'34%' if not tall else '58%'}; aspect-ratio:1/1; object-fit:cover; flex:none;
           border-radius:{22 if not tall else 28}px; border:5px solid #fff;
           box-shadow:0 8px 26px rgba(180,100,130,.30); }}
   .ph {{ background:repeating-linear-gradient(45deg,#f6dae5,#f6dae5 14px,#f2cede 14px,#f2cede 28px); }}
-  .right {{ flex:1; display:flex; flex-direction:column; justify-content:center;
-            align-items:center; text-align:center; gap:{6 if not tall else 10}px; width:100%; }}
-  .ch {{ font-family:'Dancing Script',cursive; font-size:{40 if not tall else 62}px;
+  .right {{ {'flex:1;' if not tall else ''} display:flex; flex-direction:column;
+            justify-content:center; align-items:center; text-align:center;
+            gap:{6 if not tall else 8}px; width:100%; }}
+  .ch {{ font-family:'Dancing Script',cursive; font-size:{40 if not tall else 54}px;
          color:#c2416b; line-height:1; margin-bottom:{8 if not tall else 14}px; }}
-  .tl {{ font-weight:900; font-size:{62 if not tall else 88}px; line-height:1.06;
+  .tl {{ font-weight:900; font-size:{62 if not tall else 76}px; line-height:1.08;
          color:#2b2230; letter-spacing:-.01em;
          text-shadow:0 2px 0 #fff, 0 4px 14px rgba(170,90,120,.20); }}
   .hot {{ color:#d61e50; }}
-  .heart {{ position:absolute; bottom:{14 if not tall else 20}px; left:0; right:0;
-            text-align:center; font-size:{20 if not tall else 28}px; color:#e3628c; }}
+  .heart {{ position:absolute; {'bottom:14px;' if not tall else 'top:70%;'} left:0; right:0;
+            text-align:center; font-size:{20 if not tall else 30}px; color:#e3628c; }}
 </style></head><body>
   <div class="card">{img}
     <div class="right"><div class="ch">{channel}</div>{title_html(title)}</div>

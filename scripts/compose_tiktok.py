@@ -8,7 +8,7 @@ chạy chữ (TikTok không phụ đề thì giữ chân rất kém), và cuối
 Dùng:
     python scripts/compose_tiktok.py out/hook01.mp3 out/hook01.ass out/tiktok01.mp4
 """
-import random, subprocess, sys, tempfile
+import random, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -47,7 +47,8 @@ def main():
         order += b
     order = order[:n]
 
-    tmp = Path(tempfile.mkdtemp(prefix="matnao_tt_"))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix=".matnao_tt_", dir=out.parent))
     vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,"
           f"crop={W}:{H},fps={FPS},setsar=1")
     parts = []
@@ -55,7 +56,7 @@ def main():
         p = tmp / f"s{i:03d}.mp4"
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1",
                         "-t", str(SEG), "-i", str(c), "-vf", vf, "-an",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", str(p)],
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(p)],
                        check=True)
         parts.append(p)
     lst = tmp / "l.txt"
@@ -91,6 +92,7 @@ def main():
                     "-pix_fmt", "yuv420p", "-r", str(FPS), "-t", str(total),
                     "-c:a", "aac", "-b:a", "192k", str(out)], check=True)
     print(f"\n→ {out}  {out.stat().st_size / 1e6:.0f} MB  {duration(out):.1f}s")
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ Dùng:
 Vì sao cắt sẵn từng đoạn rồi mới concat: clip nguồn dài 9–34s, ngắn hơn đoạn cần
 thì hình đứng chết ở frame cuối. `-stream_loop -1 -t SEG` cho ra đoạn dài đúng SEG.
 """
-import json, random, subprocess, sys, tempfile
+import json, random, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -69,7 +69,8 @@ def main():
         order += batch
     order = order[:n]
 
-    tmp = Path(tempfile.mkdtemp(prefix="matnao_"))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix=".matnao_", dir=out.parent))
     parts = []
     # scale phủ kín khung dọc rồi crop — clip nguồn nào lệch tỉ lệ cũng không bị méo
     vf = (f"scale={PORTRAIT_W}:{PORTRAIT_H}:force_original_aspect_ratio=increase,"
@@ -78,7 +79,7 @@ def main():
         p = tmp / f"seg{i:03d}.mp4"
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1",
                         "-t", str(seg), "-i", str(c), "-vf", vf, "-an",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", str(p)],
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(p)],
                        check=True)
         parts.append(p)
         print(f"  đoạn {i+1}/{n}  {c.name}")
@@ -105,6 +106,7 @@ def main():
 
     print(f"\n→ {out}  {out.stat().st_size / 1e6:.0f} MB  "
           f"{int(duration(out)//60)}:{int(duration(out)%60):02d}")
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":
