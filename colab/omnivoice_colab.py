@@ -27,7 +27,7 @@ from pathlib import Path
 MAX_CHARS = 400          # OmniVoice chịu đoạn dài hơn Vbee, nhưng dài quá thì trôi giọng
 GAP = 0.28               # khoảng nghỉ giữa hai đoạn, giây — khớp với pipeline Vbee
 SR = 24000
-REF_WAV, REF_TXT = "ref.wav", "ref.txt"
+REF_WAV, REF_TXT = "ref.wav", "ref.txt"   # đổi bằng cờ --ref / --reftext
 
 
 def chunks(text):
@@ -54,9 +54,16 @@ def main():
     from omnivoice import OmniVoice
 
     pos = [a for a in sys.argv[1:] if not a.startswith("--")]
-    if "--dtype" in sys.argv:
-        v = sys.argv[sys.argv.index("--dtype") + 1]
-        pos = [x for x in pos if x != v]
+    for flag in ("--dtype", "--ref", "--reftext"):
+        if flag in sys.argv:
+            v = sys.argv[sys.argv.index(flag) + 1]
+            pos = [x for x in pos if x != v]
+
+    def opt(flag, default):
+        return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else default
+
+    ref_wav = opt("--ref", REF_WAV)
+    ref_txt_file = opt("--reftext", REF_TXT)
     src, dst = Path(pos[0]), Path(pos[1])
     gpu = torch.cuda.is_available()
     if not gpu:
@@ -73,7 +80,8 @@ def main():
     if name == "float16":
         print("!! float16 đã được đo là hỏng với model này — chỉ dùng để đối chứng.")
 
-    ref_txt = Path(REF_TXT).read_text(encoding="utf-8").strip()
+    ref_txt = Path(ref_txt_file).read_text(encoding="utf-8").strip()
+    print(f"giọng mẫu: {ref_wav}  ·  {len(ref_txt)} ký tự lời")
     parts = chunks(src.read_text(encoding="utf-8"))
     total_chars = sum(len(p) for p in parts)
     print(f"{len(parts)} đoạn · {total_chars:,} ký tự · {dev} · {dt}")
@@ -82,7 +90,8 @@ def main():
                                       device_map=dev, dtype=dt)
 
     # Chạy nháp để nạp kernel CUDA — lần đầu luôn chậm, không tính vào đo tốc độ.
-    model.generate(text="Xin chào.", ref_audio=REF_WAV, ref_text=ref_txt)
+    model.generate(text="Xin chào.", ref_audio=ref_wav, ref_text=ref_txt,
+                       language="vietnamese")
     if gpu:
         torch.cuda.synchronize()
         torch.cuda.reset_peak_memory_stats()
@@ -92,7 +101,8 @@ def main():
     files, t0 = [], time.time()
     for i, p in enumerate(parts):
         t1 = time.time()
-        audio = model.generate(text=p, ref_audio=REF_WAV, ref_text=ref_txt)
+        audio = model.generate(text=p, ref_audio=ref_wav, ref_text=ref_txt,
+                       language="vietnamese")
         if gpu:
             torch.cuda.synchronize()
         f = tmp / f"p{i:03d}.wav"
